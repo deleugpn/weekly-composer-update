@@ -1,0 +1,41 @@
+version: 0.2
+
+env:
+  git-credential-helper: yes
+
+phases:
+  install:
+    runtime-versions:
+      # If you don't use Docker, you can try the native PHP runtime.
+      docker: 19
+
+  pre_build:
+    commands:
+      - docker login --username $DOCKER_HUB_USERNAME --password $DOCKER_HUB_PASSWORD
+
+  build:
+    commands:
+      # Install GH CLI
+      - curl https://cli.github.com/packages/rpm/gh-cli.repo --output /etc/yum.repos.d/gh-cli.repo
+      - yum install -y gh
+
+      # Configure GitHub User
+      - git config --global user.email "engineering@your-organization.com"
+      - git config --global user.name "Claire"
+
+      # Checkout
+      - git checkout develop
+      - git checkout -b composer-update
+
+      # Composer Update
+      - docker-compose -f docker-compose.codebuild.yaml up --no-deps -d my-primary-app-container
+      - docker-compose -f docker-compose.codebuild.yaml exec -T my-primary-app-container chmod +x /root/build/composer-update.sh
+      - docker-compose -f docker-compose.codebuild.yaml exec -T my-primary-app-container /root/build/composer-update.sh
+
+      # Commit
+      - git add .
+      - git commit -m "Composer Update by AWS CodeBuild"
+      - git push --set-upstream origin composer-update --force
+
+      # Open PR
+      - gh pr create --title "I compose, you sing" --reviewer "your-github-team-name" --body "You're welcome." --base develop --head "composer-update"
