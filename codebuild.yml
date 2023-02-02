@@ -1,0 +1,65 @@
+Description: Weekly Composer Update
+
+Resources:
+  ComposerUpdate:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      ServiceRole: @TODO: CodeBuildRoleArn Here
+      Artifacts:
+        Type: no_artifacts
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: GITHUB_TOKEN
+            Value: '{{resolve:ssm:/github/token}}'
+
+            // Only needed if you have private packages
+          - Name: COMPOSER_AUTH
+            Value: '{{resolve:ssm:/composer/auth}}'
+
+            // Only needed if you use Docker and will be downloading base-images out of Docker Hub. 
+            // This will avoid rate limits issues
+          - Name: DOCKER_HUB_USERNAME
+            Value: '{{resolve:ssm:/docker/hub/username}}'
+          - Name: DOCKER_HUB_PASSWORD
+            Value: '{{resolve:ssm:/docker/hub/password}}'
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+        PrivilegedMode: true
+      Source:
+        Auth:
+          Type: OAUTH
+        // Fill in your repository here
+        Location: https://github.com/your-org/your-repository.git
+        Type: GITHUB
+        BuildSpec: buildspec.yml
+      TimeoutInMinutes: 10
+
+  ComposerUpdateScheduler:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: cron(0 7 ? * MON *)
+      State: ENABLED
+      Targets:
+        - Id: ComposerUpdateSchedule
+          Arn: !GetAtt ComposerUpdate.Arn
+          RoleArn: !GetAtt ComposerUpdateSchedulerRole.Arn
+
+  ComposerUpdateSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - codebuild:StartBuild
+                Effect: Allow
+                Resource: !GetAtt ComposerUpdate.Arn
+          PolicyName: CloudWatchEventPolicy
